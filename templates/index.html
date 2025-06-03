@@ -1,1 +1,164 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Validator</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h2 class="text-center">Email Validator</h2>
+            </div>
+            <div class="card-body">
+                <div id="upload-section">
+                    <form id="uploadForm" class="mb-4">
+                        <div class="mb-3">
+                            <label for="emailFile" class="form-label">Upload Email List (.txt)</label>
+                            <input class="form-control" type="file" id="emailFile" accept=".txt" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <span id="uploadText">Validate Emails</span>
+                            <span id="uploadSpinner" class="spinner-border spinner-border-sm d-none"></span>
+                        </button>
+                    </form>
+                </div>
+
+                <div id="progress-section" class="d-none">
+                    <h4 class="text-center mb-3">Processing...</h4>
+                    <div class="progress mb-3">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="text-center">
+                        <span id="progressText">0% (0/0 emails processed)</span>
+                    </div>
+                </div>
+
+                <div id="result-section" class="d-none mt-4">
+                    <h4 class="text-center mb-3">Validation Complete!</h4>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="card text-white bg-success h-100">
+                                <div class="card-body text-center">
+                                    <h5 id="validCount">0</h5>
+                                    <p>Valid Emails</p>
+                                    <a id="validDownload" href="#" class="btn btn-light">Download</a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="card text-white bg-danger h-100">
+                                <div class="card-body text-center">
+                                    <h5 id="invalidCount">0</h5>
+                                    <p>Invalid Emails</p>
+                                    <a id="invalidDownload" href="#" class="btn btn-light">Download</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="newValidation" class="btn btn-outline-primary w-100 mt-3">Start New Validation</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('emailFile');
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // Show loading state
+            document.getElementById('uploadText').classList.add('d-none');
+            document.getElementById('uploadSpinner').classList.remove('d-none');
+            document.getElementById('uploadForm').querySelector('button').disabled = true;
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                    resetUploadForm();
+                    return;
+                }
+                
+                // Hide upload, show progress
+                document.getElementById('upload-section').classList.add('d-none');
+                document.getElementById('progress-section').classList.remove('d-none');
+                
+                // Start polling
+                pollTaskStatus(data.task_id);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Upload failed');
+                resetUploadForm();
+            });
+        });
+        
+        function pollTaskStatus(taskId) {
+            const interval = setInterval(() => {
+                fetch(`/status/${taskId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'PROGRESS' || data.status === 'SUCCESS') {
+                        // Update progress
+                        const percent = data.progress || 0;
+                        document.getElementById('progressBar').style.width = `${percent}%`;
+                        document.getElementById('progressText').textContent = 
+                            `${percent}% (${data.current || 0}/${data.total || 0} emails processed)`;
+                        
+                        if (data.status === 'SUCCESS') {
+                            clearInterval(interval);
+                            showResults(data);
+                        }
+                    } else if (data.status === 'FAILURE') {
+                        clearInterval(interval);
+                        alert(`Validation failed: ${data.error}`);
+                        resetUploadForm();
+                    }
+                });
+            }, 1000);
+        }
+        
+        function showResults(data) {
+            document.getElementById('progress-section').classList.add('d-none');
+            document.getElementById('result-section').classList.remove('d-none');
+            
+            document.getElementById('validCount').textContent = data.valid_count || 0;
+            document.getElementById('invalidCount').textContent = data.invalid_count || 0;
+            
+            document.getElementById('validDownload').href = `/download/${data.valid}`;
+            document.getElementById('invalidDownload').href = `/download/${data.invalid}`;
+        }
+        
+        document.getElementById('newValidation').addEventListener('click', resetUploadForm);
+        
+        function resetUploadForm() {
+            document.getElementById('uploadForm').reset();
+            document.getElementById('uploadText').classList.remove('d-none');
+            document.getElementById('uploadSpinner').classList.add('d-none');
+            document.getElementById('uploadForm').querySelector('button').disabled = false;
+            
+            document.getElementById('progress-section').classList.add('d-none');
+            document.getElementById('result-section').classList.add('d-none');
+            document.getElementById('upload-section').classList.remove('d-none');
+            
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressText').textContent = '0% (0/0 emails processed)';
+        }
+    </script>
+</body>
+</html>
